@@ -7,5 +7,5 @@ cd /app
 # echo "Running pre-flight setup..."
 
 # Run the command passed to the container
-composer install
+composer install --no-interaction || true
 exec "$@"

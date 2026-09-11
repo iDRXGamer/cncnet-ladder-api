@@ -60,7 +60,7 @@ HEALTHCHECK --start-period=5s --interval=10s --timeout=5s --retries=8 CMD php /a
 FROM base AS development
 USER root
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y nodejs && \
+    apt-get install -y nodejs mariadb-client && \
     npm install -g chokidar-cli
 COPY docker/frankenphp/dev-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
