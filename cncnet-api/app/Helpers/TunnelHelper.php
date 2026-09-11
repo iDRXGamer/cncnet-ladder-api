@@ -47,4 +47,68 @@ class TunnelHelper
         
         return $tunnels;
     }
+
+    public static function allocateTunnelPorts(int $playerCount = 2): ?array
+    {
+        $tunnels = [
+            ['ip' => '138.2.138.104', 'port' => 50000, 'name' => 'Frankfurt Relay'],
+            ['ip' => '54.36.14.241', 'port' => 50000, 'name' => 'France Kisiek'],
+            ['ip' => '23.88.49.17', 'port' => 50000, 'name' => 'Germany Clan-Server'],
+            ['ip' => '88.99.76.254', 'port' => 50000, 'name' => 'Fast Server Germany'],
+        ];
+
+        foreach ($tunnels as $tunnel)
+        {
+            try
+            {
+                $url = "http://{$tunnel['ip']}:{$tunnel['port']}/request?clients={$playerCount}";
+                $ctx = stream_context_create([
+                    'http' => [
+                        'timeout' => 2,
+                        'ignore_errors' => true,
+                    ]
+                ]);
+
+                $response = @file_get_contents($url, false, $ctx);
+                if ($response)
+                {
+                    $raw = trim($response);
+                    $raw = str_replace(['[', ']'], '', $raw);
+                    $parts = explode(',', $raw);
+                    $ports = [];
+
+                    foreach ($parts as $part)
+                    {
+                        $p = (int)trim($part);
+                        if ($p < 0)
+                        {
+                            $p += 65536;
+                        }
+                        if ($p > 0 && $p <= 65535)
+                        {
+                            $ports[] = $p;
+                        }
+                    }
+
+                    if (count($ports) >= $playerCount)
+                    {
+                        \Illuminate\Support\Facades\Log::info("[TunnelHelper] Allocated {$playerCount} ports from {$tunnel['name']} ({$tunnel['ip']}:{$tunnel['port']}): " . implode(', ', $ports));
+                        return [
+                            'ip' => $tunnel['ip'],
+                            'port' => $tunnel['port'],
+                            'name' => $tunnel['name'],
+                            'ports' => $ports,
+                        ];
+                    }
+                }
+            }
+            catch (\Throwable $e)
+            {
+                \Illuminate\Support\Facades\Log::warning("[TunnelHelper] Failed to allocate tunnel ports from {$tunnel['ip']}: " . $e->getMessage());
+            }
+        }
+
+        \Illuminate\Support\Facades\Log::warning("[TunnelHelper] All tunnel allocations failed for {$playerCount} clients.");
+        return null;
+    }
 }
