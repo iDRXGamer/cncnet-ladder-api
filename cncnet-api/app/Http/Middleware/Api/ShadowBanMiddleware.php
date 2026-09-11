@@ -20,7 +20,7 @@ class ShadowBanMiddleware
         $ip = $request->getClientIp();
         $qmClientId = $request->hwid;
 
-        if($user->checkForShadowBan($ip, $qmClientId)) {
+        if ($user && $user->checkForShadowBan($ip, $qmClientId)) {
             Log::info("Shadow banned: " . $user->name);
             return $this->qmService->onCheckback();
         }

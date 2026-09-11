@@ -21,9 +21,12 @@ use App\Models\QmMatchPlayer;
 use App\Models\QmMatchState;
 use App\Models\QmUserId;
 use App\Models\StateType;
+use App\Models\User;
+use App\Models\UserSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class MatchUpController
 {
@@ -41,18 +44,65 @@ class MatchUpController
 
     public function __invoke(Request $request, Ladder $ladder, string $playerName)
     {
+        $isCasual = $request->boolean('casual') || $request->input('mode') === 'casual';
+        $user = $request->user() ?? auth('api')->user();
+
+        if (!$isCasual)
+        {
+            if (!$user)
+            {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+
+            if (!$this->playerService->checkUserHasVerifiedEmail($user))
+            {
+                return $this->quickMatchService->onFatalError(
+                    'Quick Match now requires a verified email address to play.' . PHP_EOL .
+                    'A verification code has been sent to ' . $user->email . PHP_EOL
+                );
+            }
+        }
+
         // check that the player is registered in the ladder
         $player = $this->playerService->findPlayerByUsername($playerName, $ladder);
         if (!isset($player))
         {
-            return $this->quickMatchService->onFatalError(
-                $playerName . ' is not registered in ' . $ladder->abbreviation
-            );
+            if ($isCasual)
+            {
+                if (!$user)
+                {
+                    $user = User::firstOrCreate(
+                        ['name' => $playerName],
+                        ['email' => strtolower($playerName) . '@casual.cncnet.org', 'password' => bcrypt(Str::random(16))]
+                    );
+                }
+
+                $player = Player::firstOrCreate(
+                    ['username' => $playerName, 'ladder_id' => $ladder->id],
+                    ['user_id' => $user->id]
+                );
+            }
+            else
+            {
+                return $this->quickMatchService->onFatalError(
+                    $playerName . ' is not registered in ' . $ladder->abbreviation
+                );
+            }
+        }
+
+        if (!$user)
+        {
+            $user = $player->user;
+        }
+
+        if ($user && !$user->userSettings)
+        {
+            UserSettings::firstOrCreate(['user_id' => $user->id]);
+            $user->load('userSettings');
         }
 
         // check that the player is related to the authenticated user
-        $user = $request->user();
-        if ($user->id !== $player->user->id)
+        if (!$isCasual && $user->id !== $player->user->id)
         {
             return $this->quickMatchService->onFatalError(
                 'Failed'
@@ -277,7 +327,7 @@ class MatchUpController
         {
             try
             {
-                $qmPlayer = $this->quickMatchService->createQMPlayer($request, $player, $ladder->current_history);
+                $qmPlayer = $this->quickMatchService->createQMPlayer($request, $player, $ladder->currentHistory());
             }
             catch (\RuntimeException $ex)
             {
@@ -377,10 +427,11 @@ class MatchUpController
         // If no match has been found already, then queue up to match an opponent
         if (!isset($qmPlayer->qm_match_id))
         {
-            $qmQueueEntry = $this->quickMatchService->createOrUpdateQueueEntry($player, $qmPlayer, $ladder->current_history, $gameType);
+            $isCasual = $request->boolean('casual') || $request->input('mode') === 'casual';
+            $qmQueueEntry = $this->quickMatchService->createOrUpdateQueueEntry($player, $qmPlayer, $ladder->currentHistory(), $gameType, $isCasual);
 
             // Push a job to find an opponent
-            Log::debug("Queued FindOpponent job for {$qmQueueEntry->id}, name={$player?->username}, ladder={$ladder->abbreviation}");
+            Log::debug("Queued FindOpponent job for {$qmQueueEntry->id}, name={$player?->username}, ladder={$ladder->abbreviation}, casual={$isCasual}");
 
             dispatch(new FindOpponentJob($qmQueueEntry?->id, $gameType));
 

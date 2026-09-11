@@ -773,6 +773,22 @@ class ApiLadderController extends Controller
             'hasWinner' => $hasWinner,
         ]);
 
+        if ($gameReport->game?->is_casual || $gameReport->game?->qmMatch?->is_casual)
+        {
+            Log::info("awardPlayerPoints: Casual match, skipping Elo point calculations", [
+                'game_id' => $gameReport->game_id,
+                'game_report_id' => $gameReport->id,
+            ]);
+
+            foreach ($playerGameReports as $playerGR)
+            {
+                $playerGR->points = 0;
+                $playerGR->save();
+            }
+
+            return 200;
+        }
+
         foreach ($playerGameReports as $playerGR)
         {
             if ($playerGR->spectator == true)

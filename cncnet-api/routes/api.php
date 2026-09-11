@@ -142,14 +142,10 @@ Route::group(['prefix' => 'v2'], function ()
 
 Route::group(['prefix' => 'v1'], function ()
 {
-    Route::group(['middleware' => 'auth:api'], function ()
-    {
-        Route::post('/qm/{ladder:abbreviation}/{playerName}', \App\Http\Controllers\Api\V2\Qm\MatchUpController::class)
-            ->middleware([
-                \App\Http\Middleware\Api\ClientUpToDateMiddleware::class,
-                \App\Http\Middleware\Api\ShadowBanMiddleware::class,
-                \App\Http\Middleware\Api\BanMiddleware::class,
-                \App\Http\Middleware\Api\VerifiedEmailMiddleware::class,
-            ]);
-    });
+    Route::post('/qm/{ladder:abbreviation}/{playerName}', \App\Http\Controllers\Api\V2\Qm\MatchUpController::class)
+        ->middleware([
+            \App\Http\Middleware\Api\ClientUpToDateMiddleware::class,
+            \App\Http\Middleware\Api\ShadowBanMiddleware::class,
+            \App\Http\Middleware\Api\BanMiddleware::class,
+        ]);
 });
