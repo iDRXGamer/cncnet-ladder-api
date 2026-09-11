@@ -172,12 +172,15 @@ class PlayerService
      * @param $qmClientId
      * @return mixed|null
      */
-    public function checkUserForBans(\App\Models\User $user, $ip, $qmClientId)
+    public function checkUserForBans(?\App\Models\User $user, $ip, $qmClientId)
     {
-        $ban = $user->getBan(true);
-        if ($ban !== null)
+        if ($user !== null)
         {
-            return $ban;
+            $ban = $user->getBan(true);
+            if ($ban !== null)
+            {
+                return $ban;
+            }
         }
 
         $ban = \App\Models\IpAddress::findByIP($ip)->getBan(true);

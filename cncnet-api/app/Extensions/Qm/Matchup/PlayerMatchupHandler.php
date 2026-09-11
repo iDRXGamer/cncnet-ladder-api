@@ -39,11 +39,21 @@ class PlayerMatchupHandler extends BaseMatchupHandler
         // Fetch all other players in the queue
         $opponents = $this->quickMatchService->fetchQmQueueEntry($this->history, $this->qmQueueEntry);
 
-        // Find opponents in same tier with current player.
-        $matchableOpponents = $this->quickMatchService->getEntriesInSameTier($ladder, $this->qmQueueEntry, $opponents);
+        if ($this->qmQueueEntry->casual)
+        {
+            // In casual mode: No tier restrictions and no Elo delta restrictions
+            $matchableOpponents = $opponents->filter(function ($opp) {
+                return isset($opp->qmPlayer) && !$opp->qmPlayer->isObserver();
+            })->shuffle();
+        }
+        else
+        {
+            // Find opponents in same tier with current player.
+            $matchableOpponents = $this->quickMatchService->getEntriesInSameTier($ladder, $this->qmQueueEntry, $opponents);
 
-        // Find opponents that can be matched with current player.
-        $matchableOpponents = $this->quickMatchService->getMatchableOpponents($this->qmQueueEntry, $matchableOpponents)->shuffle();
+            // Find opponents that can be matched with current player.
+            $matchableOpponents = $this->quickMatchService->getMatchableOpponents($this->qmQueueEntry, $matchableOpponents)->shuffle();
+        }
 
         $numberOfOpponentsNeeded = $ladderRules->player_count - 1;
 
@@ -73,8 +83,15 @@ class PlayerMatchupHandler extends BaseMatchupHandler
 
         if (count($commonQmMaps) < 1)
         {
-            Log::info("FindOpponent ** No common maps available for ladder: $ladder->abbreviation, player: $playerName");
-            return;
+            if ($this->qmQueueEntry->casual && $ladder->mapPool && $ladder->mapPool->maps->count() > 0)
+            {
+                $commonQmMaps = $ladder->mapPool->maps;
+            }
+            else
+            {
+                Log::info("FindOpponent ** No common maps available for ladder: $ladder->abbreviation, player: $playerName");
+                return;
+            }
         }
 
         // Add observers to the match if there is any (maximum of one observer per match)

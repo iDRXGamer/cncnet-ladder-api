@@ -2,6 +2,7 @@
 
 namespace App\Http\Services;
 
+use App\Helpers\TunnelHelper;
 use App\Services\FactionPolicyService;
 use App\Http\Services\TwitchService;
 use App\Extensions\Qm\Matchup\ClanMatchupHandler;
@@ -17,6 +18,7 @@ use App\Models\QmMatchPlayer;
 use App\Models\QmQueueEntry;
 use Exception;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class QuickMatchService
@@ -34,7 +36,7 @@ class QuickMatchService
         $qmPlayer = new QmMatchPlayer();
         $qmPlayer->player_id = $player->id;
         $qmPlayer->ladder_id = $player->ladder_id;
-        $qmPlayer->map_bitfield = $request->map_bitfield;
+        $qmPlayer->map_bitfield = $request->map_bitfield ?? 0xffffffff;
         $qmPlayer->tier = $player->playerHistory($history)->tier;
         $qmPlayer->waiting = true;
 
@@ -59,7 +61,7 @@ class QuickMatchService
         $qmPlayer->ipv6_address_id = $addr ? $addr->id : null;
         $qmPlayer->ipv6_port = $request->ipv6_port;
 
-        $qmPlayer->chosen_side = $request->side;
+        $qmPlayer->chosen_side = $request->side ?? 0;
 
         // Store preferred colors. If not set, players get yellow/red like usual.
         if (isset($request->colors) && is_array($request->colors))
@@ -71,9 +73,15 @@ class QuickMatchService
             $qmPlayer->colors_opponent_pref = json_encode(array_values($request->colors_opponent));
         }
 
-        if ($request->map_sides)
+        if ($request->map_sides && is_array($request->map_sides))
         {
             $qmPlayer->map_sides_id = \App\Models\MapSideString::findValue(join(',', $request->map_sides))->id;
+        }
+        else
+        {
+            $side = $request->side ?? 0;
+            $defaultSides = implode(',', array_fill(0, 64, $side));
+            $qmPlayer->map_sides_id = \App\Models\MapSideString::findValue($defaultSides)->id;
         }
 
         if ($request->client_version)
@@ -297,7 +305,7 @@ class QuickMatchService
         return $alert;
     }
 
-    public function createOrUpdateQueueEntry($player, $qmPlayer, $history, $gameType)
+    public function createOrUpdateQueueEntry($player, $qmPlayer, $history, $gameType, bool $isCasual = false)
     {
         $pc = $player->playerCache($history->id);
         $points = 0;
@@ -337,12 +345,14 @@ class QuickMatchService
             }
 
             $qEntry->game_type = $gameType;
+            $qEntry->casual = $isCasual;
             $qEntry->save();
         }
         else
         {
             $qEntry = $qmPlayer->qEntry;
             $qEntry->touch();
+            $qEntry->casual = $isCasual;
 
             if ($qEntry->ladder_history_id != $history->id) //what is this conditional for?
             {
@@ -351,6 +361,11 @@ class QuickMatchService
                 $qEntry->rating = $player->rating->rating;
                 $qEntry->points = $points;
                 $qEntry->game_type = $gameType;
+                $qEntry->casual = $isCasual;
+                $qEntry->save();
+            }
+            else
+            {
                 $qEntry->save();
             }
         }
@@ -366,6 +381,10 @@ class QuickMatchService
 
         if ($qmQueueEntry)
         {
+            // Only match casual with casual, and ranked with ranked
+            $isCasual = (bool)($qmQueueEntry->casual ?? false);
+            $query->where('casual', '=', $isCasual);
+
             // Client versions need to match. Otherwise players simply don't see each other.
             $currentVersion = $qmQueueEntry->qmPlayer->client_version;
             $query->where('qm_match_player_id', '!=', $qmQueueEntry->qmPlayer->id)
@@ -704,7 +723,7 @@ class QuickMatchService
         $qmPlayer->qm_match_id = $qmMatch->id;
         $qmPlayer->tunnel_id = $qmMatch->seed + $qmPlayer->color;
 
-        $psides = explode(',', $qmPlayer->mapSides->value);
+        $psides = explode(',', $qmPlayer->mapSides?->value ?? '');
 
         if (count($psides) > $qmMap->bit_idx)
         {
@@ -955,7 +974,7 @@ class QuickMatchService
                 return;
             }
 
-            $osides = explode(',', $otherQmPlayer->mapSides->value);
+            $osides = explode(',', $otherQmPlayer->mapSides?->value ?? '');
 
             if (count($osides) > $qmMap->bit_idx)
             {
@@ -1102,7 +1121,7 @@ class QuickMatchService
             if (!$qmPlayer->isObserver())
             {
                 $qmPlayer->color = $colorsArr[$i];
-                $qmPlayer->location = $spawnOrder[$i] - 1;
+                $qmPlayer->location = ((int)($spawnOrder[$i] ?? 1)) - 1;
                 $qmPlayer->save();
                 $i++;
                 Log::debug("QuickMatchService ** Assigning Spot (prefs) for " . $qmPlayer->player->username . " Color: " . $qmPlayer->color .  " Location: " . $qmPlayer->location);
@@ -1115,7 +1134,7 @@ class QuickMatchService
             if ($qmPlayer->isObserver() == false)
             {
                 $qmPlayer->color = $colorsArr[$i];
-                $qmPlayer->location = $spawnOrder[$i] - 1;
+                $qmPlayer->location = ((int)($spawnOrder[$i] ?? 1)) - 1;
                 $qmPlayer->save();
                 $i++;
                 Log::debug("QuickMatchService ** Assigning Spot for " . $qmPlayer->player->username . " Color: " . $qmPlayer->color .  " Location: " . $qmPlayer->location);
@@ -1133,7 +1152,7 @@ class QuickMatchService
                 return;
             }
 
-            $osides = explode(',', $otherQmPlayer->mapSides->value);
+            $osides = explode(',', $otherQmPlayer->mapSides?->value ?? '');
 
             if (count($osides) > $qmMap->bit_idx)
                 $otherQmPlayer->actual_side = $osides[$qmMap->bit_idx];
@@ -1155,7 +1174,7 @@ class QuickMatchService
             else
             {
                 $otherQmPlayer->color = $colorsArr[$i];
-                $otherQmPlayer->location = $spawnOrder[$i] - 1;
+                $otherQmPlayer->location = ((int)($spawnOrder[$i] ?? 1)) - 1;
                 $i++;
 
                 Log::debug("ApiQuickMatchController ** Assigning Spot for " . $otherQmPlayer->player->username . "Color: " . $otherQmPlayer->color .  " Location: " . $otherQmPlayer->location);
@@ -1229,10 +1248,11 @@ class QuickMatchService
         $qmMatch->qm_map_id = $qmMapId;
         $qmMatch->seed = mt_rand(-2147483647, 2147483647);
         $qmMatch->tier = $currentUserTier;
-
+        $qmMatch->is_casual = (bool)($qEntry->casual ?? false);
 
         # Create the Game
         $game = Game::genQmEntry($qmMatch, $gameType);
+        $game->is_casual = $qmMatch->is_casual;
         $qmMatch->game_id = $game->id;
         $qmMatch->save();
         $game->qm_match_id = $qmMatch->id;
@@ -1253,7 +1273,7 @@ class QuickMatchService
         $qmPlayerFresh->tunnel_id = $qmMatch->seed + $qmPlayerFresh->color;
         $qmMap = $qmMatch->map;
 
-        $psides = explode(',', $qmPlayerFresh->mapSides->value);
+        $psides = explode(',', $qmPlayerFresh->mapSides?->value ?? '');
         if (count($psides) > $qmMap->bit_idx)
         {
             $qmPlayerFresh->actual_side = $psides[$qmMap->bit_idx];
@@ -1334,6 +1354,9 @@ class QuickMatchService
 
         // Validate match configuration before launching
         $this->validateMatchConfiguration($qmMatch);
+
+        // Allocate official CnCNet V2 tunnel ports for this match
+        $this->assignTunnelAndPorts($qmMatch);
 
         return $qmMatch;
     }
@@ -1430,6 +1453,9 @@ class QuickMatchService
         // Validate match configuration before launching
         $this->validateMatchConfiguration($qmMatch);
 
+        // Allocate official CnCNet V2 tunnel ports for this match
+        $this->assignTunnelAndPorts($qmMatch);
+
         return $qmMatch;
     }
 
@@ -1466,7 +1492,7 @@ class QuickMatchService
             $qmPlayer->color = $colors++;
             $qmPlayer->location = $spawnOrder[$i] - 1;
 
-            $osides = explode(',', $qmPlayer->mapSides->value);
+            $osides = explode(',', $qmPlayer->mapSides?->value ?? '');
 
             if (count($osides) > $qmMap->bit_idx)
             {
@@ -2193,8 +2219,8 @@ class QuickMatchService
     {
         $response = [
             "type" => "please wait",
-            "checkback" => 10,
-            "no_sooner_than" => 5
+            "checkback" => 2,
+            "no_sooner_than" => 1
         ];
 
         if (isset($alert))
@@ -2203,5 +2229,42 @@ class QuickMatchService
         }
 
         return response()->json($response);
+    }
+
+    /**
+     * Allocates official CnCNet V2 tunnel ports and assigns them to players.
+     */
+    private function assignTunnelAndPorts(QmMatch $qmMatch): void
+    {
+        try {
+            $nonObservers = $qmMatch->players()->where('is_observer', '!=', 1)->orderBy('color', 'ASC')->get();
+            $count = $nonObservers->count();
+            if ($count < 2) {
+                return;
+            }
+
+            $tunnelData = TunnelHelper::allocateTunnelPorts($count);
+            if ($tunnelData && !empty($tunnelData['ports'])) {
+                // Cache tunnel info for 1 hour
+                Cache::put("qm_match_tunnel:{$qmMatch->id}", [
+                    'ip' => $tunnelData['ip'],
+                    'port' => $tunnelData['port'],
+                    'name' => $tunnelData['name'],
+                ], 3600);
+
+                // Assign allocated ports to players in deterministic order
+                foreach ($nonObservers as $idx => $player) {
+                    if (isset($tunnelData['ports'][$idx])) {
+                        $player->port = $tunnelData['ports'][$idx];
+                        $player->save();
+                        Log::info("[QuickMatchService] Assigned tunnel port {$player->port} to player {$player->player_id} (match {$qmMatch->id})");
+                    }
+                }
+            } else {
+                Log::warning("[QuickMatchService] Could not allocate tunnel ports for match {$qmMatch->id}, falling back to direct connection.");
+            }
+        } catch (\Throwable $e) {
+            Log::error("[QuickMatchService] Exception during assignTunnelAndPorts for match {$qmMatch->id}: " . $e->getMessage());
+        }
     }
 }
