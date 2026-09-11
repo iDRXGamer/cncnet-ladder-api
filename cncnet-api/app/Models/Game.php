@@ -28,7 +28,8 @@ class Game extends Model
         'plrs',
         'scen',
         'hash',
-        'game_type'
+        'game_type',
+        'is_casual',
     ];
 
     protected $hidden = ['created_at', 'updated_at'];

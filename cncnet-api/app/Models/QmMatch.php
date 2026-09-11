@@ -18,6 +18,7 @@ class QmMatch extends Model
         'stats_teams_elo_diff',
         'stats_elo_gap_sum',
         'stats_match_ranking',
+        'is_casual',
     ];
 
     public function players()

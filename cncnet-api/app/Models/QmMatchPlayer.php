@@ -33,7 +33,14 @@ class QmMatchPlayer extends Model
     {
         if ($this->_map_side_array === null)
         {
-            $this->_map_side_array = explode(',', $this->mapSides->value);
+            if ($this->mapSides && isset($this->mapSides->value))
+            {
+                $this->_map_side_array = explode(',', $this->mapSides->value);
+            }
+            else
+            {
+                $this->_map_side_array = [];
+            }
         }
         return $this->_map_side_array;
     }

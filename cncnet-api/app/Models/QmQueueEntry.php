@@ -7,6 +7,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class QmQueueEntry extends Model
 {
+    protected $casts = [
+        'casual' => 'boolean',
+    ];
+
     public function qmPlayer()
     {
         return $this->belongsTo(QmMatchPlayer::class, 'qm_match_player_id');

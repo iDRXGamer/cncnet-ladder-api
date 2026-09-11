@@ -41,6 +41,7 @@ class QmMap extends Model
         'valid',
         'description',
         'allowed_sides',
+        'spawn_order',
         'team1_spawn_order',
         'team2_spawn_order',
     ];
