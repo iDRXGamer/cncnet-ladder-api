@@ -7,6 +7,7 @@ use App\Helpers\GameHelper;
 use App\Models\QmMatchPlayer;
 use App\Models\SpawnOptionType;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class QuickMatchSpawnService
@@ -57,6 +58,7 @@ class QuickMatchSpawnService
                 "Side" =>           $qmPlayer->actual_side,
                 "Color" =>          $qmPlayer->color,
                 "MyIndex" =>        $qmPlayer->color,
+                "PlayerCount" =>    $ladderRules->player_count ?? 2,
                 "IsSpectator" =>    "False",
                 "DisableChat" => ($isObserver || $notAllowedToChat) ? "True" : "False",
                 "AllowChat" => (!$isObserver && !$notAllowedToChat) ? "True" : "False",
@@ -68,6 +70,15 @@ class QuickMatchSpawnService
                 return !is_null($var);
             }
         );
+
+        $tunnel = Cache::get("qm_match_tunnel:{$qmMatch->id}");
+        if ($tunnel)
+        {
+            $spawnStruct["spawn"]["Tunnel"] = [
+                "Ip" => $tunnel['ip'],
+                "Port" => (int)$tunnel['port']
+            ];
+        }
 
         foreach ($ladder->spawnOptionValues as $sov)
         {
@@ -143,6 +154,9 @@ class QuickMatchSpawnService
             $spawnStruct["spawn"]["SpawnLocations"]["Multi{$multiIndex}"] = $qmPlayer->location;
         }
 
+        $spawnStruct["spawn"]["HouseCountries"]["Multi{$multiIndex}"] = $qmPlayer->actual_side;
+        $spawnStruct["spawn"]["HouseColors"]["Multi{$multiIndex}"] = $qmPlayer->color;
+
         if ($qmPlayer->player->user->userSettings->skip_score_screen)
         {
             $spawnStruct["spawn"]["Settings"]["SkipScoreScreen"] = "Yes";
@@ -151,15 +165,29 @@ class QuickMatchSpawnService
         $myTeamIndices = [];
         $myTeamIndices[] = $currentQmPlayerIndex;
 
+        $hasTunnel = isset($spawnStruct["spawn"]["Tunnel"]);
+
         foreach ($otherQmMatchPlayers as $opn)
         {
+            $multiIndex = $opn->color + 1;
+
+            if ($opn->isObserver() == false)
+            {
+                $spawnStruct["spawn"]["SpawnLocations"]["Multi{$multiIndex}"] = $opn->location;
+            }
+
+            $spawnStruct["spawn"]["HouseCountries"]["Multi{$multiIndex}"] = $opn->actual_side;
+            $spawnStruct["spawn"]["HouseColors"]["Multi{$multiIndex}"] = $opn->color;
+
+            $opnIp = $hasTunnel ? "0.0.0.0" : ($opn->lan_address ? $opn->lan_address->address : ($opn->ipAddress ? $opn->ipAddress->address : "127.0.0.1"));
+
             # Other{1,2,3} etc
             $spawnStruct["spawn"]["Other{$otherIndex}"] = [
                 "Name"          => $opn->player()->first()->username,
                 "Side"          => $opn->actual_side,
                 "Color"         => $opn->color,
                 "MyIndex"       => $opn->color,
-                "Ip"            => $opn->ipAddress ? $opn->ipAddress->address : "",
+                "Ip"            => $opnIp,
                 "Port"          => $opn->port,
                 "IPv6"          => $opn->ipv6Address ? $opn->ipv6Address->address : "",
                 "PortV6"        => $opn->ipv6_port,
@@ -168,14 +196,6 @@ class QuickMatchSpawnService
                 "IsSpectator"   => $opn->isObserver() ? "True" : "False",
                 "Host"          => ($opn->color == 0 && $qmPlayer->ladder->abbreviation == "d2k") ? "Yes" : "No", // if Dune and player color is 0
             ];
-
-
-            $multiIndex = $opn->color + 1;
-
-            if ($opn->isObserver() == false)
-            {
-                $spawnStruct["spawn"]["SpawnLocations"]["Multi{$multiIndex}"] = $opn->location;
-            }
 
 
             # Check if other player is in my clan, if so add alliance
@@ -291,20 +311,37 @@ class QuickMatchSpawnService
             $spawnStruct["spawn"]["SpawnLocations"]["Multi{$multiIndex}"] = $qmPlayer->location;
         }
 
+        $spawnStruct["spawn"]["HouseCountries"]["Multi{$multiIndex}"] = $qmPlayer->actual_side;
+        $spawnStruct["spawn"]["HouseColors"]["Multi{$multiIndex}"] = $qmPlayer->color;
+
         if ($qmPlayer->player->user->userSettings->skip_score_screen)
         {
             $spawnStruct["spawn"]["Settings"]["SkipScoreScreen"] = "Yes";
         }
 
+        $hasTunnel = isset($spawnStruct["spawn"]["Tunnel"]);
+
         foreach ($otherQmMatchPlayers as $opn)
         {
+            $multiIndex = $opn->color + 1;
+
+            if ($opn->isObserver() == false)
+            {
+                $spawnStruct["spawn"]["SpawnLocations"]["Multi{$multiIndex}"] = $opn->location;
+            }
+
+            $spawnStruct["spawn"]["HouseCountries"]["Multi{$multiIndex}"] = $opn->actual_side;
+            $spawnStruct["spawn"]["HouseColors"]["Multi{$multiIndex}"] = $opn->color;
+
+            $opnIp = $hasTunnel ? "0.0.0.0" : ($opn->lan_address ? $opn->lan_address->address : ($opn->ipAddress ? $opn->ipAddress->address : "127.0.0.1"));
+
             # Other{1,2,3} etc
             $spawnStruct["spawn"]["Other{$otherIndex}"] = [
                 "Name"          => $opn->player()->first()->username,
                 "Side"          => $opn->actual_side,
                 "Color"         => $opn->color,
                 "MyIndex"       => $opn->color,
-                "Ip"            => $opn->ipAddress ? $opn->ipAddress->address : "",
+                "Ip"            => $opnIp,
                 "Port"          => $opn->port,
                 "IPv6"          => $opn->ipv6Address ? $opn->ipv6Address->address : "",
                 "PortV6"        => $opn->ipv6_port,
@@ -313,14 +350,6 @@ class QuickMatchSpawnService
                 "IsSpectator"   => $opn->isObserver() ? "True" : "False",
                 "Host"          => ($opn->color == 0 && $qmPlayer->ladder->abbreviation == "d2k") ? "Yes" : "No", // if Dune and player color is 0
             ];
-
-
-            $multiIndex = $opn->color + 1;
-
-            if ($opn->isObserver() == false)
-            {
-                $spawnStruct["spawn"]["SpawnLocations"]["Multi{$multiIndex}"] = $opn->location;
-            }
 
 
             # Superweapon/faction logic
