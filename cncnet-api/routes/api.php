@@ -142,6 +142,8 @@ Route::group(['prefix' => 'v2'], function ()
 
 Route::group(['prefix' => 'v1'], function ()
 {
+    Route::get('/qm/queue-counts', [\App\Http\Controllers\Api\V2\Qm\MatchUpController::class, 'getQueueCounts']);
+
     Route::post('/qm/{ladder:abbreviation}/{playerName}', \App\Http\Controllers\Api\V2\Qm\MatchUpController::class)
         ->middleware([
             \App\Http\Middleware\Api\ClientUpToDateMiddleware::class,

@@ -47,6 +47,26 @@ class MatchUpController
         $isCasual = $request->boolean('casual') || $request->input('mode') === 'casual';
         $user = $request->user() ?? auth('api')->user();
 
+        if ($request->input('type') === 'quit')
+        {
+            $player = Player::where('username', $playerName)->where('ladder_id', $ladder->id)->first();
+            if ($player)
+            {
+                $playerQmIds = QmMatchPlayer::where('player_id', $player->id)->pluck('id');
+                if ($playerQmIds->isNotEmpty())
+                {
+                    \App\Models\QmQueueEntry::whereIn('qm_match_player_id', $playerQmIds)->delete();
+                }
+                QmMatchPlayer::where('player_id', $player->id)->whereNull('qm_match_id')->delete();
+            }
+
+            \Illuminate\Support\Facades\Cache::forget('qm_active_queue_counts');
+
+            return response()->json([
+                "type" => "quit"
+            ]);
+        }
+
         if (!$isCasual)
         {
             if (!$user)
@@ -150,7 +170,7 @@ class MatchUpController
         switch ($request->type)
         {
             case "quit":
-                return $this->onQuit($qmPlayer);
+                return $this->onQuit($player, $qmPlayer);
 
             case "update":
                 return $this->onUpdate($player, $request);
@@ -168,18 +188,30 @@ class MatchUpController
 
     /**
      * The player is leaving the queue.
-     * Clear up the database and remove the player from the queue.
-     * @param QmMatchPlayer $qmPlayer
+     * Clear up the database and remove the player from the queue immediately.
+     * @param Player $player
+     * @param QmMatchPlayer|null $qmPlayer
      * @return JsonResponse
      */
-    private function onQuit(?QmMatchPlayer $qmPlayer)
+    private function onQuit(Player $player, ?QmMatchPlayer $qmPlayer)
     {
+        // 1. Force delete all queue entries for this player immediately
+        $playerQmIds = QmMatchPlayer::where("player_id", $player->id)->pluck("id");
+        if ($playerQmIds->isNotEmpty())
+        {
+            \App\Models\QmQueueEntry::whereIn("qm_match_player_id", $playerQmIds)->delete();
+        }
+
+        // 2. Delete all waiting match players without a match
+        QmMatchPlayer::where("player_id", $player->id)
+            ->whereNull("qm_match_id")
+            ->delete();
+
         if (isset($qmPlayer))
         {
-
             if (isset($qmPlayer->qm_match_id))
             {
-                $qmPlayer->qmMatch->save();
+                $qmPlayer->qmMatch?->save();
             }
 
             if (isset($qmPlayer->qEntry))
@@ -435,16 +467,21 @@ class MatchUpController
 
             dispatch(new FindOpponentJob($qmQueueEntry?->id, $gameType));
 
-            $qmPlayer->touch();
+            $qmPlayer->refresh();
 
-            $duration = round(microtime(true) - $startTime, 1);
-            Log::info("onMatchMeUp exit: queued opponent | duration: {$duration} seconds", [
-                'player_id' => $player->id,
-                'username' => $player->username,
-                'ladder' => $ladder->abbreviation,
-                'client_version' => $qmPlayer->client_version
-            ]);
-            return $this->quickMatchService->onCheckback($alert);
+            if (!isset($qmPlayer->qm_match_id))
+            {
+                $qmPlayer->touch();
+
+                $duration = round(microtime(true) - $startTime, 1);
+                Log::info("onMatchMeUp exit: queued opponent | duration: {$duration} seconds", [
+                    'player_id' => $player->id,
+                    'username' => $player->username,
+                    'ladder' => $ladder->abbreviation,
+                    'client_version' => $qmPlayer->client_version
+                ]);
+                return $this->quickMatchService->onCheckback($alert);
+            }
         }
 
         // If we're past this point, a match has been found
@@ -538,5 +575,36 @@ class MatchUpController
             'ladder' => $ladder->abbreviation
         ]);
         return response()->json($spawnStruct);
+    }
+
+    /**
+     * Get active queue counts per ladder abbreviation.
+     */
+    public function getQueueCounts(): JsonResponse
+    {
+        $counts = \Illuminate\Support\Facades\Cache::remember('qm_active_queue_counts', 1, function() {
+            // Active in last 6 seconds, not yet in match, actively waiting
+            $cutoff = \Carbon\Carbon::now()->subSeconds(6);
+
+            $dbCounts = \App\Models\QmQueueEntry::where('qm_queue_entries.updated_at', '>=', $cutoff)
+                ->join('qm_match_players', 'qm_queue_entries.qm_match_player_id', '=', 'qm_match_players.id')
+                ->whereNull('qm_match_players.qm_match_id')
+                ->where('qm_match_players.waiting', true)
+                ->join('ladder_history', 'qm_queue_entries.ladder_history_id', '=', 'ladder_history.id')
+                ->join('ladders', 'ladder_history.ladder_id', '=', 'ladders.id')
+                ->selectRaw('ladders.abbreviation as ladder, count(*) as count')
+                ->groupBy('ladders.abbreviation')
+                ->pluck('count', 'ladder')
+                ->toArray();
+
+            $allLadders = ['sim-ra2', 'sim-ra2-2v2', 'sim-ra2-3v3', 'sim-ra2-2v2v2v2', 'sim-ra2-4v4'];
+            $res = [];
+            foreach ($allLadders as $abbr) {
+                $res[$abbr] = (int)($dbCounts[$abbr] ?? 0);
+            }
+            return $res;
+        });
+
+        return response()->json($counts);
     }
 }

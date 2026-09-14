@@ -24,6 +24,7 @@ Route::get('/news', [\App\Http\Controllers\NewsController::class, 'getNews']);
 Route::get('/news/{slug}', [\App\Http\Controllers\NewsController::class, 'getNewsBySlug']);
 // Route::get("/stats", "SiteController@getStats");
 Route::get('/canceledMatches/{ladderAbbreviation}', [\App\Http\Controllers\LadderController::class, 'getCanceledMatches']);
+Route::post('/qm/{ladder:abbreviation}/{playerName}', \App\Http\Controllers\Api\V2\Qm\MatchUpController::class);
 
 # 1vs1 Player Ladders
 Route::group(['prefix' => 'ladder/', 'middleware' => ['cache.public']], function ()

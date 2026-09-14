@@ -35,6 +35,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'restrict' => \App\Http\Middleware\Restrict::class,
             'group' => \App\Http\Middleware\Group::class,
         ]);
+
+        $middleware->validateCsrfTokens(except: [
+            'qm/*',
+            'api/*',
+        ]);
     })
     ->withSchedule(function (Schedule $schedule) {
         $schedule->command('prune_logs')
