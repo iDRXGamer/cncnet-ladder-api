@@ -1014,6 +1014,7 @@ class QuickMatchService
             $otherQmPlayer->qm_match_id = $qmMatch->id;
             $otherQmPlayer->tunnel_id = $qmMatch->seed + $otherQmPlayer->color;
             $otherQmPlayer->save();
+            \App\Models\QmQueueEntry::where('qm_match_player_id', $otherQmPlayer->id)->delete();
         }
 
         if ($qmPlayer->actual_side == -1)
@@ -1183,6 +1184,7 @@ class QuickMatchService
             $otherQmPlayer->qm_match_id = $qmMatch->id;
             $otherQmPlayer->tunnel_id = $qmMatch->seed + $otherQmPlayer->color;
             $otherQmPlayer->save();
+            \App\Models\QmQueueEntry::where('qm_match_player_id', $otherQmPlayer->id)->delete();
 
             if (!$otherQmPlayer->isObserver() && $opponentPlayer === null)
             {
@@ -1271,6 +1273,7 @@ class QuickMatchService
 
         $qmPlayerFresh->qm_match_id = $qmMatch->id;  // TODO NULL POINTERS HERE SOMETIMES !!!
         $qmPlayerFresh->tunnel_id = $qmMatch->seed + $qmPlayerFresh->color;
+        \App\Models\QmQueueEntry::where('qm_match_player_id', $qmPlayerFresh->id)->delete();
         $qmMap = $qmMatch->map;
 
         $psides = explode(',', $qmPlayerFresh->mapSides?->value ?? '');
@@ -1345,11 +1348,10 @@ class QuickMatchService
 
         Log::debug("Launching match with players $playerNames, " . $qmPlayer->player->username . " on map: " . $qmMatch->map->description);
 
-        // Log final spawn configuration for all players
-        $allPlayers = $qmMatch->players;
-        foreach ($allPlayers as $p) {
-            $pName = $p->player?->username ?? 'Unknown';
-            Log::debug("[QuickMatchService::createQmMatch] Match {$qmMatch->id} - Player {$pName}: is_observer={$p->is_observer}, team={$p->team}, color={$p->color}, location={$p->location}");
+        // Apply balanced random factions for 1v1 Red Alert 2 matches
+        $active1v1Players = $qmMatch->players()->where('is_observer', 0)->get();
+        if ($active1v1Players->count() === 2) {
+            \App\Helpers\MatchmakingFactionHelper::assign1v1($active1v1Players[0], $active1v1Players[1]);
         }
 
         // Validate match configuration before launching
@@ -1443,11 +1445,23 @@ class QuickMatchService
         // Set observer spawn locations and flags
         $this->setObserversSpawns($observers, $qmMatch, $colors);
 
-        // Log final spawn configuration for all players
-        $allPlayers = $qmMatch->players;
-        foreach ($allPlayers as $p) {
-            $pName = $p->player?->username ?? 'Unknown';
-            Log::debug("[QuickMatchService::createTeamQmMatch] Match {$qmMatch->id} - Player {$pName}: is_observer={$p->is_observer}, team={$p->team}, color={$p->color}, location={$p->location}");
+        // Apply synchronized balanced random factions for team matches
+        $activeTeamPlayers = $qmMatch->players()->where('is_observer', 0)->get();
+        $teamA = $activeTeamPlayers->where('team', 'A')->values()->all();
+        $teamB = $activeTeamPlayers->where('team', 'B')->values()->all();
+
+        if (count($teamA) === 2 && count($teamB) === 2) {
+            \App\Helpers\MatchmakingFactionHelper::assign2v2($teamA, $teamB);
+        } elseif (count($teamA) === 3 && count($teamB) === 3) {
+            \App\Helpers\MatchmakingFactionHelper::assign3v3($teamA, $teamB);
+        } elseif (count($teamA) === 4 && count($teamB) === 4) {
+            \App\Helpers\MatchmakingFactionHelper::assign4v4($teamA, $teamB);
+        } else {
+            $teamsGrouped = [];
+            foreach ($activeTeamPlayers->groupBy('team') as $tName => $tPlayers) {
+                $teamsGrouped[$tName] = $tPlayers->values()->all();
+            }
+            \App\Helpers\MatchmakingFactionHelper::assignMultiTeam($teamsGrouped);
         }
 
         // Validate match configuration before launching

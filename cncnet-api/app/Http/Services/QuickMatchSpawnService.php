@@ -198,13 +198,13 @@ class QuickMatchSpawnService
             ];
 
 
-            # Check if other player is in my clan, if so add alliance
-            if (
-                $qmPlayer->clan_id
-                && $qmPlayer->clan_id == $opn->clan_id
-            )
+            # Check if other player is in my team or clan, if so add alliance
+            $isSameTeam = ($qmPlayer->team && $qmPlayer->team !== 'observer' && $qmPlayer->team === $opn->team);
+            $isSameClan = ($qmPlayer->clan_id && $qmPlayer->clan_id === $opn->clan_id);
+
+            if ($isSameTeam || $isSameClan)
             {
-                $clanName = $qmPlayer->clan->name;
+                $teamDesc = $isSameTeam ? "Team {$qmPlayer->team}" : $qmPlayer->clan->name;
                 $p1Name = $qmPlayer->player->username;
                 $p1IsObserver = $qmPlayer->isObserver();
 
@@ -213,10 +213,17 @@ class QuickMatchSpawnService
 
                 if ($p1IsObserver == false && $p2IsObserver == false)
                 {
-                    Log::debug("QuickMatchSpawnService 1 ** Alliances: Teaming for $clanName, Player: $p1Name (OBS: $p1IsObserver) with Player: $p2Name (OBS: $$p2IsObserver)");
+                    Log::debug("QuickMatchSpawnService 1 ** Alliances: Teaming for $teamDesc, Player: $p1Name with Player: $p2Name");
 
-                    $spawnStruct["spawn"]["Multi{$currentQmPlayerIndex}_Alliances"]["HouseAllyOne"] = $multiIndex - 1;
-                    $spawnStruct["spawn"]["Multi{$multiIndex}_Alliances"]["HouseAllyOne"] = $currentQmPlayerIndex - 1;
+                    $allyKeys = ["HouseAllyOne", "HouseAllyTwo", "HouseAllyThree", "HouseAllyFour", "HouseAllyFive", "HouseAllySix"];
+                    $p1Allies = $spawnStruct["spawn"]["Multi{$currentQmPlayerIndex}_Alliances"] ?? [];
+                    $nextSlotP1 = $allyKeys[count($p1Allies)] ?? ("HouseAlly" . (count($p1Allies) + 1));
+                    $spawnStruct["spawn"]["Multi{$currentQmPlayerIndex}_Alliances"][$nextSlotP1] = $multiIndex - 1;
+
+                    $p2Allies = $spawnStruct["spawn"]["Multi{$multiIndex}_Alliances"] ?? [];
+                    $nextSlotP2 = $allyKeys[count($p2Allies)] ?? ("HouseAlly" . (count($p2Allies) + 1));
+                    $spawnStruct["spawn"]["Multi{$multiIndex}_Alliances"][$nextSlotP2] = $currentQmPlayerIndex - 1;
+
                     $myTeamIndices[] = $multiIndex;
                 }
             }
@@ -242,50 +249,51 @@ class QuickMatchSpawnService
             $otherIndex++;
         }
 
-        if ($qmPlayer->clan_id)
+        // Create alliances for opponent teams if any
+        $allyKeys = ["HouseAllyOne", "HouseAllyTwo", "HouseAllyThree", "HouseAllyFour", "HouseAllyFive", "HouseAllySix"];
+        foreach ($otherQmMatchPlayers as $opn)
         {
-            //create multi alliance for opponent's team
-            $completed = false;
-            foreach ($otherQmMatchPlayers as $opn)
+            $multiIndex = $opn->color + 1;
+
+            if ($opn->isObserver() == false)
             {
-                $multiIndex = $opn->color + 1;
-
-                if ($opn->isObserver() == false)
+                if (!in_array($multiIndex, $myTeamIndices))
                 {
-                    if (!in_array($multiIndex, $myTeamIndices)) //this index is opponent's team
+                    foreach ($otherQmMatchPlayers as $opn2)
                     {
-                        foreach ($otherQmMatchPlayers as $opn2) //find teammate(s)
+                        $otherIndex = $opn2->color + 1;
+
+                        if ($otherIndex == $multiIndex)
+                            continue;
+
+                        if (!in_array($otherIndex, $myTeamIndices))
                         {
-                            $otherIndex = $opn2->color + 1;
+                            $p1IsObserver = $opn->isObserver();
+                            $p2IsObserver = $opn2->isObserver();
 
-                            if ($otherIndex == $multiIndex) //self
-                                continue;
-
-                            if (!in_array($otherIndex, $myTeamIndices)) //this index is opponent's teammate
+                            if ($p1IsObserver == false && $p2IsObserver == false)
                             {
-                                $p1Name = $opn->player->username;
-                                $p2Name = $opn2->player->username;
+                                $oppSameTeam = ($opn->team && $opn->team !== 'observer' && $opn->team === $opn2->team);
+                                $oppSameClan = ($opn->clan_id && $opn->clan_id === $opn2->clan_id);
 
-                                $p1IsObserver = $opn->isObserver();
-                                $p2IsObserver = $opn2->isObserver();
-
-                                if ($p1IsObserver == false && $p2IsObserver == false)
+                                if ($oppSameTeam || $oppSameClan)
                                 {
-                                    if ($opn->clan_id == $opn2->clan_id)
-                                    {
-                                        Log::debug("QuickMatchSpawnService 2 ** Alliances: Teaming Player: $p1Name (OBS: $p1IsObserver) with Player: $p2Name (OBS: $p2IsObserver)");
-                                        $spawnStruct["spawn"]["Multi{$otherIndex}_Alliances"]["HouseAllyOne"] = $multiIndex - 1;
-                                        $spawnStruct["spawn"]["Multi{$multiIndex}_Alliances"]["HouseAllyOne"] = $otherIndex - 1;
-                                        $completed = true;
+                                    $p1Allies = $spawnStruct["spawn"]["Multi{$otherIndex}_Alliances"] ?? [];
+                                    if (!in_array($multiIndex - 1, $p1Allies)) {
+                                        $nextSlot = $allyKeys[count($p1Allies)] ?? ("HouseAlly" . (count($p1Allies) + 1));
+                                        $spawnStruct["spawn"]["Multi{$otherIndex}_Alliances"][$nextSlot] = $multiIndex - 1;
+                                    }
+
+                                    $p2Allies = $spawnStruct["spawn"]["Multi{$multiIndex}_Alliances"] ?? [];
+                                    if (!in_array($otherIndex - 1, $p2Allies)) {
+                                        $nextSlot = $allyKeys[count($p2Allies)] ?? ("HouseAlly" . (count($p2Allies) + 1));
+                                        $spawnStruct["spawn"]["Multi{$multiIndex}_Alliances"][$nextSlot] = $otherIndex - 1;
                                     }
                                 }
                             }
                         }
                     }
                 }
-
-                if ($completed)
-                    break;
             }
         }
 

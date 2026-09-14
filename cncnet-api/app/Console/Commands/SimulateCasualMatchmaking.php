@@ -46,53 +46,72 @@ class SimulateCasualMatchmaking extends Command
 
         // 1. Setup Mock Ladder and Maps
         $this->info("[1/5] Setting up simulation environment & ladder...");
-        $ladder = Ladder::firstOrCreate(
-            ['abbreviation' => 'sim-ra2'],
-            ['name' => 'Simulation RA2 Ladder', 'clans_allowed' => false, 'ladder_type' => 1]
-        );
+        $modesConfig = [
+            ['abbr' => 'sim-ra2', 'name' => 'Simulation RA2 1v1', 'count' => 2, 'type' => 1],
+            ['abbr' => 'sim-ra2-2v2', 'name' => 'Simulation RA2 2v2', 'count' => 4, 'type' => 2],
+            ['abbr' => 'sim-ra2-3v3', 'name' => 'Simulation RA2 3v3', 'count' => 6, 'type' => 2],
+            ['abbr' => 'sim-ra2-2v2v2v2', 'name' => 'Simulation RA2 2v2v2v2', 'count' => 8, 'type' => 2],
+            ['abbr' => 'sim-ra2-4v4', 'name' => 'Simulation RA2 4v4', 'count' => 8, 'type' => 2],
+        ];
 
-        // Sides: Allied (0), Soviet (1), Yuri (2)
-        foreach ([0 => 'Allied', 1 => 'Soviet', 2 => 'Yuri'] as $sideId => $sideName) {
-            Side::firstOrCreate(
-                ['ladder_id' => $ladder->id, 'local_id' => $sideId],
-                ['name' => $sideName]
+        $primaryLadder = null;
+
+        foreach ($modesConfig as $cfg) {
+            $curLadder = Ladder::firstOrCreate(
+                ['abbreviation' => $cfg['abbr']],
+                ['name' => $cfg['name'], 'clans_allowed' => false, 'ladder_type' => $cfg['type']]
             );
+
+            foreach ([0 => 'Allied', 1 => 'Soviet', 2 => 'Yuri'] as $sideId => $sideName) {
+                Side::firstOrCreate(
+                    ['ladder_id' => $curLadder->id, 'local_id' => $sideId],
+                    ['name' => $sideName]
+                );
+            }
+
+            $rules = QmLadderRules::firstOrCreate(
+                ['ladder_id' => $curLadder->id],
+                ['player_count' => $cfg['count'], 'allowed_sides' => '-1,0,1,2']
+            );
+            $rules->player_count = $cfg['count'];
+            $rules->save();
+
+            $mapPool = MapPool::firstOrCreate(['ladder_id' => $curLadder->id]);
+            $curLadder->map_pool_id = $mapPool->id;
+            $curLadder->save();
+
+            $mapNames = ['Heck Freezes Over', 'Country Swing', 'Tournament Arena', 'May Day'];
+            foreach ($mapNames as $idx => $name) {
+                $map = Map::firstOrCreate(
+                    ['name' => $name, 'ladder_id' => $curLadder->id],
+                    ['spawn_count' => $cfg['count'], 'filename' => strtolower(str_replace(' ', '_', $name)) . '.map']
+                );
+                QmMap::firstOrCreate(
+                    ['ladder_id' => $curLadder->id, 'map_pool_id' => $mapPool->id, 'map_id' => $map->id],
+                    [
+                        'description' => $name,
+                        'valid' => 1,
+                        'bit_idx' => $idx,
+                        'spawn_order' => '0,0',
+                        'allowed_sides' => $rules->allowed_sides
+                    ]
+                );
+            }
+
+            $lh = LadderHistory::firstOrCreate(
+                ['ladder_id' => $curLadder->id],
+                ['starts' => now()->startOfMonth(), 'ends' => now()->endOfMonth()]
+            );
+            $curLadder->setRelation('currentHistory', $lh);
+
+            if ($cfg['abbr'] === 'sim-ra2') {
+                $primaryLadder = $curLadder;
+            }
+
+            $this->line("  - Ladder: <fg=cyan>{$curLadder->name}</> ({$curLadder->abbreviation}) [{$cfg['count']}p]");
         }
 
-        $rules = QmLadderRules::firstOrCreate(
-            ['ladder_id' => $ladder->id],
-            ['player_count' => 2, 'allowed_sides' => '-1,0,1,2']
-        );
-
-        $mapPool = MapPool::firstOrCreate(['ladder_id' => $ladder->id]);
-        $ladder->map_pool_id = $mapPool->id;
-        $ladder->save();
-
-        $mapNames = ['Heck Freezes Over', 'Country Swing', 'Tournament Arena', 'May Day'];
-        foreach ($mapNames as $idx => $name) {
-            $map = Map::firstOrCreate(
-                ['name' => $name, 'ladder_id' => $ladder->id],
-                ['spawn_count' => 2, 'filename' => strtolower(str_replace(' ', '_', $name)) . '.map']
-            );
-            QmMap::firstOrCreate(
-                ['ladder_id' => $ladder->id, 'map_pool_id' => $mapPool->id, 'map_id' => $map->id],
-                [
-                    'description' => $name,
-                    'valid' => 1,
-                    'bit_idx' => $idx,
-                    'spawn_order' => '0,0',
-                    'allowed_sides' => $rules->allowed_sides
-                ]
-            );
-        }
-
-        $lh = LadderHistory::firstOrCreate(
-            ['ladder_id' => $ladder->id],
-            ['starts' => now()->startOfMonth(), 'ends' => now()->endOfMonth()]
-        );
-        $ladder->setRelation('currentHistory', $lh);
-
-        $this->line("  - Ladder: <fg=cyan>{$ladder->name}</> ({$ladder->abbreviation})");
+        $ladder = $primaryLadder;
         $this->line("  - Map Pool: " . count($mapNames) . " official maps loaded\n");
 
         // 2. Setup Simulated Players
