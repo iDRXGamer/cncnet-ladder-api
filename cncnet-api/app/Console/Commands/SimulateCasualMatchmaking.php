@@ -80,22 +80,24 @@ class SimulateCasualMatchmaking extends Command
             $curLadder->map_pool_id = $mapPool->id;
             $curLadder->save();
 
-            $mapNames = ['Heck Freezes Over', 'Country Swing', 'Tournament Arena', 'May Day'];
-            foreach ($mapNames as $idx => $name) {
-                $map = Map::firstOrCreate(
-                    ['name' => $name, 'ladder_id' => $curLadder->id],
-                    ['spawn_count' => $cfg['count'], 'filename' => strtolower(str_replace(' ', '_', $name)) . '.map']
-                );
-                QmMap::firstOrCreate(
-                    ['ladder_id' => $curLadder->id, 'map_pool_id' => $mapPool->id, 'map_id' => $map->id],
-                    [
-                        'description' => $name,
-                        'valid' => 1,
-                        'bit_idx' => $idx,
-                        'spawn_order' => '0,0',
-                        'allowed_sides' => $rules->allowed_sides
-                    ]
-                );
+            if (QmMap::where('ladder_id', $curLadder->id)->where('valid', 1)->count() === 0) {
+                $mapNames = ['Heck Freezes Over', 'Country Swing', 'Tournament Arena', 'May Day'];
+                foreach ($mapNames as $idx => $name) {
+                    $map = Map::firstOrCreate(
+                        ['name' => $name, 'ladder_id' => $curLadder->id],
+                        ['spawn_count' => $cfg['count'], 'filename' => strtolower(str_replace(' ', '_', $name)) . '.map']
+                    );
+                    QmMap::firstOrCreate(
+                        ['ladder_id' => $curLadder->id, 'map_pool_id' => $mapPool->id, 'map_id' => $map->id],
+                        [
+                            'description' => $name,
+                            'valid' => 1,
+                            'bit_idx' => $idx,
+                            'spawn_order' => '0,0',
+                            'allowed_sides' => $rules->allowed_sides
+                        ]
+                    );
+                }
             }
 
             $lh = LadderHistory::firstOrCreate(

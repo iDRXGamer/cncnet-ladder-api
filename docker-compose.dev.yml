@@ -10,14 +10,14 @@ services:
         UID: ${HOST_UID}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
-    #command: php artisan octane:frankenphp --watch
-    command: php artisan serve --host=0.0.0.0 --port=8000
+    command: php artisan octane:frankenphp --host=0.0.0.0 --port=8000 --workers=4
     restart: unless-stopped
     container_name: dev_cncnet_ladder_app
     env_file: ./cncnet-api/.env
     environment:
       XDG_CONFIG_HOME: /app/.config
       XDG_DATA_HOME: /app/.data
+      PHP_CLI_SERVER_WORKERS: 10
     ports:
       - 3000:8000
       - 5173:5173

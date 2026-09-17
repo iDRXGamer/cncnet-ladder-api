@@ -15,19 +15,14 @@ class AppServiceProvider extends ServiceProvider
 	 */
 	public function boot()
 	{
-		//
+		config(['debugbar.enabled' => false]);
+		if (class_exists(\Barryvdh\Debugbar\Facades\Debugbar::class)) {
+			\Barryvdh\Debugbar\Facades\Debugbar::disable();
+		}
 	}
 
-	/**
-	 * Register any application services.
-	 *
-	 * This service provider is a great spot to register your various container
-	 * bindings with the application. As you can see, we are registering our
-	 * "Registrar" implementation here. You can add your own bindings too!
-	 *
-	 * @return void
-	 */
 	public function register()
 	{
+		config(['debugbar.enabled' => false]);
 	}
 }
