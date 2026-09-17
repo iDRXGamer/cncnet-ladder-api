@@ -80,17 +80,48 @@ class SimulateCasualMatchmaking extends Command
             $curLadder->map_pool_id = $mapPool->id;
             $curLadder->save();
 
+            $modeMapsConfig = [
+                'sim-ra2' => [
+                    ['name' => 'A Hill Between', 'hash' => 'C1C9FC820EC9FBB4932D2FAFECA317B9D889D839', 'filename' => 'ahillbetween.map'],
+                    ['name' => 'Fjord', 'hash' => '9403314549EBCE94AA37FC5B2A8489D289016998', 'filename' => 'fjord.map'],
+                ],
+                'sim-ra2-2v2' => [
+                    ['name' => 'Depth Charge', 'hash' => '7E19FFFB5A97EF5CD0105C18EBD28BC1FE012616', 'filename' => 'depthcharge.map'],
+                    ['name' => 'Invasion Confirmed', 'hash' => 'B02D57D2A0F81AE6D177E5FED08921CFE3F5D3A1', 'filename' => 'invasionconfirmed.map'],
+                ],
+                'sim-ra2-3v3' => [
+                    ['name' => 'Crushed Ice', 'hash' => '68D761CA4CE5F9C23D025429C2CE4C6486A6DD24', 'filename' => 'crushedice.map'],
+                    ['name' => 'East vs Best', 'hash' => '5C26931A87068E64CD8E1E6DD245350F033C9274', 'filename' => 'eastvsbest.map'],
+                ],
+                'sim-ra2-2v2v2v2' => [
+                    ['name' => 'Hex Bay', 'hash' => 'CB87B5190432664861361257ADCDECADEF17BF76', 'filename' => 'hexbay.map'],
+                    ['name' => 'Storm', 'hash' => '1B8064F7CCF6B0DB2453702FA42A51865681614D', 'filename' => 'storm.map'],
+                ],
+                'sim-ra2-4v4' => [
+                    ['name' => 'Grand Crevice', 'hash' => '5CDACEBE54B195BB99CDE445DB0B338CB36C0B05', 'filename' => 'grandcrevice.map'],
+                    ['name' => 'Boiling Point', 'hash' => '18345899A6EF5D8FC53B48869136B74CFD42B741', 'filename' => 'boilingpoint.map'],
+                ],
+            ];
+
+            $modeMaps = $modeMapsConfig[$cfg['abbr']] ?? [
+                ['name' => 'A Hill Between', 'hash' => 'C1C9FC820EC9FBB4932D2FAFECA317B9D889D839', 'filename' => 'ahillbetween.map'],
+                ['name' => 'Fjord', 'hash' => '9403314549EBCE94AA37FC5B2A8489D289016998', 'filename' => 'fjord.map'],
+            ];
+
             if (QmMap::where('ladder_id', $curLadder->id)->where('valid', 1)->count() === 0) {
-                $mapNames = ['Heck Freezes Over', 'Country Swing', 'Tournament Arena', 'May Day'];
-                foreach ($mapNames as $idx => $name) {
+                foreach ($modeMaps as $idx => $mCfg) {
                     $map = Map::firstOrCreate(
-                        ['name' => $name, 'ladder_id' => $curLadder->id],
-                        ['spawn_count' => $cfg['count'], 'filename' => strtolower(str_replace(' ', '_', $name)) . '.map']
+                        ['name' => $mCfg['name'], 'ladder_id' => $curLadder->id],
+                        ['hash' => $mCfg['hash'], 'spawn_count' => $cfg['count'], 'filename' => $mCfg['filename']]
                     );
+                    if ($map->hash !== $mCfg['hash']) {
+                        $map->hash = $mCfg['hash'];
+                        $map->save();
+                    }
                     QmMap::firstOrCreate(
                         ['ladder_id' => $curLadder->id, 'map_pool_id' => $mapPool->id, 'map_id' => $map->id],
                         [
-                            'description' => $name,
+                            'description' => $mCfg['name'],
                             'valid' => 1,
                             'bit_idx' => $idx,
                             'spawn_order' => '0,0',
