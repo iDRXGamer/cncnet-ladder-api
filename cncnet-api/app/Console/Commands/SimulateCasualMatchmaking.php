@@ -47,12 +47,16 @@ class SimulateCasualMatchmaking extends Command
         // 1. Setup Mock Ladder and Maps
         $this->info("[1/5] Setting up simulation environment & ladder...");
         $modesConfig = [
-            ['abbr' => 'sim-ra2', 'name' => 'Simulation RA2 1v1', 'count' => 2, 'type' => 1],
-            ['abbr' => 'sim-ra2-2v2', 'name' => 'Simulation RA2 2v2', 'count' => 4, 'type' => 2],
-            ['abbr' => 'sim-ra2-3v3', 'name' => 'Simulation RA2 3v3', 'count' => 6, 'type' => 2],
-            ['abbr' => 'sim-ra2-2v2v2v2', 'name' => 'Simulation RA2 2v2v2v2', 'count' => 8, 'type' => 2],
-            ['abbr' => 'sim-ra2-4v4', 'name' => 'Simulation RA2 4v4', 'count' => 8, 'type' => 2],
+            ['abbr' => 'sim-ra2', 'name' => 'Simulation RA2 1v1', 'count' => 2, 'type' => 1, 'mode_key' => '1v1'],
+            ['abbr' => 'sim-ra2-2v2', 'name' => 'Simulation RA2 2v2', 'count' => 4, 'type' => 2, 'mode_key' => '2v2'],
+            ['abbr' => 'sim-ra2-3v3', 'name' => 'Simulation RA2 3v3', 'count' => 6, 'type' => 2, 'mode_key' => '3v3'],
+            ['abbr' => 'sim-ra2-2v2v2v2', 'name' => 'Simulation RA2 2v2v2v2', 'count' => 8, 'type' => 2, 'mode_key' => '2v2v2v2'],
+            ['abbr' => 'sim-ra2-4v4', 'name' => 'Simulation RA2 4v4', 'count' => 8, 'type' => 2, 'mode_key' => '4v4'],
         ];
+
+        // Parse unified Matchmaking.ini if present
+        $iniPath = base_path('Matchmaking.ini');
+        $parsedIni = file_exists($iniPath) ? parse_ini_file($iniPath, true, INI_SCANNER_RAW) : [];
 
         $primaryLadder = null;
 
@@ -80,55 +84,74 @@ class SimulateCasualMatchmaking extends Command
             $curLadder->map_pool_id = $mapPool->id;
             $curLadder->save();
 
-            $modeMapsConfig = [
-                'sim-ra2' => [
-                    ['name' => 'A Hill Between', 'hash' => 'C1C9FC820EC9FBB4932D2FAFECA317B9D889D839', 'filename' => 'ahillbetween.map'],
-                    ['name' => 'Fjord', 'hash' => '9403314549EBCE94AA37FC5B2A8489D289016998', 'filename' => 'fjord.map'],
-                ],
-                'sim-ra2-2v2' => [
-                    ['name' => 'Depth Charge', 'hash' => '7E19FFFB5A97EF5CD0105C18EBD28BC1FE012616', 'filename' => 'depthcharge.map'],
-                    ['name' => 'Invasion Confirmed', 'hash' => 'B02D57D2A0F81AE6D177E5FED08921CFE3F5D3A1', 'filename' => 'invasionconfirmed.map'],
-                ],
-                'sim-ra2-3v3' => [
-                    ['name' => 'Crushed Ice', 'hash' => '68D761CA4CE5F9C23D025429C2CE4C6486A6DD24', 'filename' => 'crushedice.map'],
-                    ['name' => 'East vs Best', 'hash' => '5C26931A87068E64CD8E1E6DD245350F033C9274', 'filename' => 'eastvsbest.map'],
-                ],
-                'sim-ra2-2v2v2v2' => [
-                    ['name' => 'Hex Bay', 'hash' => 'CB87B5190432664861361257ADCDECADEF17BF76', 'filename' => 'hexbay.map'],
-                    ['name' => 'Storm', 'hash' => '1B8064F7CCF6B0DB2453702FA42A51865681614D', 'filename' => 'storm.map'],
-                ],
-                'sim-ra2-4v4' => [
-                    ['name' => 'Grand Crevice', 'hash' => '5CDACEBE54B195BB99CDE445DB0B338CB36C0B05', 'filename' => 'grandcrevice.map'],
-                    ['name' => 'Boiling Point', 'hash' => '18345899A6EF5D8FC53B48869136B74CFD42B741', 'filename' => 'boilingpoint.map'],
-                ],
-            ];
+            $modeKey = $cfg['mode_key'] ?? '1v1';
+            $mapsSection = "{$modeKey}_Maps";
+            $modeMaps = [];
 
-            $modeMaps = $modeMapsConfig[$cfg['abbr']] ?? [
-                ['name' => 'A Hill Between', 'hash' => 'C1C9FC820EC9FBB4932D2FAFECA317B9D889D839', 'filename' => 'ahillbetween.map'],
-                ['name' => 'Fjord', 'hash' => '9403314549EBCE94AA37FC5B2A8489D289016998', 'filename' => 'fjord.map'],
-            ];
-
-            if (QmMap::where('ladder_id', $curLadder->id)->where('valid', 1)->count() === 0) {
-                foreach ($modeMaps as $idx => $mCfg) {
-                    $map = Map::firstOrCreate(
-                        ['name' => $mCfg['name'], 'ladder_id' => $curLadder->id],
-                        ['hash' => $mCfg['hash'], 'spawn_count' => $cfg['count'], 'filename' => $mCfg['filename']]
-                    );
-                    if ($map->hash !== $mCfg['hash']) {
-                        $map->hash = $mCfg['hash'];
-                        $map->save();
+            if (!empty($parsedIni[$mapsSection]) && is_array($parsedIni[$mapsSection])) {
+                foreach ($parsedIni[$mapsSection] as $entry) {
+                    $entry = trim($entry, "\" \t\n\r\0\x0B");
+                    $parts = preg_split('/[,;|]/', $entry);
+                    $hash = trim($parts[0] ?? '');
+                    if (empty($hash)) {
+                        continue;
                     }
-                    QmMap::firstOrCreate(
-                        ['ladder_id' => $curLadder->id, 'map_pool_id' => $mapPool->id, 'map_id' => $map->id],
-                        [
-                            'description' => $mCfg['name'],
-                            'valid' => 1,
-                            'bit_idx' => $idx,
-                            'spawn_order' => '0,0',
-                            'allowed_sides' => $rules->allowed_sides
-                        ]
-                    );
+                    $name = isset($parts[1]) && trim($parts[1]) !== '' ? trim($parts[1]) : $hash;
+                    $filename = isset($parts[2]) && trim($parts[2]) !== '' ? trim($parts[2]) : strtolower(str_replace(' ', '', $name)) . '.map';
+                    $modeMaps[] = [
+                        'name' => $name,
+                        'hash' => $hash,
+                        'filename' => $filename,
+                    ];
                 }
+            }
+
+            if (empty($modeMaps)) {
+                $defaultMaps = [
+                    'sim-ra2' => [
+                        ['name' => 'A Hill Between', 'hash' => 'C1C9FC820EC9FBB4932D2FAFECA317B9D889D839', 'filename' => 'hillbtwn.map'],
+                        ['name' => 'Fjord', 'hash' => '9403314549EBCE94AA37FC5B2A8489D289016998', 'filename' => '2_fjord.map'],
+                    ],
+                    'sim-ra2-2v2' => [
+                        ['name' => 'Depth Charge', 'hash' => '7E19FFFB5A97EF5CD0105C18EBD28BC1FE012616', 'filename' => 'xmp10s4.map'],
+                        ['name' => 'Invasion Confirmed', 'hash' => 'B02D57D2A0F81AE6D177E5FED08921CFE3F5D3A1', 'filename' => 'xinvasion.map'],
+                    ],
+                    'sim-ra2-3v3' => [
+                        ['name' => 'Crushed Ice', 'hash' => '68D761CA4CE5F9C23D025429C2CE4C6486A6DD24', 'filename' => '6_crushed_ice.map'],
+                        ['name' => 'East vs Best', 'hash' => '5C26931A87068E64CD8E1E6DD245350F033C9274', 'filename' => 'EastVsBest.map'],
+                    ],
+                    'sim-ra2-2v2v2v2' => [
+                        ['name' => 'Hex Bay', 'hash' => 'CB87B5190432664861361257ADCDECADEF17BF76', 'filename' => 'hexbay.map'],
+                        ['name' => 'Storm', 'hash' => '1B8064F7CCF6B0DB2453702FA42A51865681614D', 'filename' => '8_storm.map'],
+                    ],
+                    'sim-ra2-4v4' => [
+                        ['name' => 'Grand Crevice', 'hash' => '5CDACEBE54B195BB99CDE445DB0B338CB36C0B05', 'filename' => '8grandcrevice12.map'],
+                        ['name' => 'Boiling Point', 'hash' => '18345899A6EF5D8FC53B48869136B74CFD42B741', 'filename' => '8boilingpoint1.map'],
+                    ],
+                ];
+                $modeMaps = $defaultMaps[$cfg['abbr']] ?? $defaultMaps['sim-ra2'];
+            }
+
+            foreach ($modeMaps as $idx => $mCfg) {
+                $map = Map::firstOrCreate(
+                    ['name' => $mCfg['name'], 'ladder_id' => $curLadder->id],
+                    ['hash' => $mCfg['hash'], 'spawn_count' => $cfg['count'], 'filename' => $mCfg['filename']]
+                );
+                if ($map->hash !== $mCfg['hash'] || $map->filename !== $mCfg['filename']) {
+                    $map->hash = $mCfg['hash'];
+                    $map->filename = $mCfg['filename'];
+                    $map->save();
+                }
+                QmMap::firstOrCreate(
+                    ['ladder_id' => $curLadder->id, 'map_pool_id' => $mapPool->id, 'map_id' => $map->id],
+                    [
+                        'description' => $mCfg['name'],
+                        'valid' => 1,
+                        'bit_idx' => $idx,
+                        'spawn_order' => '0,0',
+                        'allowed_sides' => $rules->allowed_sides
+                    ]
+                );
             }
 
             $lh = LadderHistory::firstOrCreate(
@@ -145,7 +168,8 @@ class SimulateCasualMatchmaking extends Command
         }
 
         $ladder = $primaryLadder;
-        $this->line("  - Map Pool: " . count($mapNames) . " official maps loaded\n");
+        $totalMapsCount = QmMap::where('ladder_id', $ladder->id)->where('valid', 1)->count();
+        $this->line("  - Map Pool: {$totalMapsCount} official maps loaded for primary ladder\n");
 
         // 2. Setup Simulated Players
         $this->info("[2/5] Creating simulated Red Alert 2 player accounts...");
