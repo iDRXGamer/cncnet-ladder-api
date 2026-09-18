@@ -44,7 +44,7 @@ class MatchUpController
 
     public function __invoke(Request $request, Ladder $ladder, string $playerName)
     {
-        $isCasual = $request->boolean('casual') || $request->input('mode') === 'casual';
+        $isCasual = $this->quickMatchService->isCasual($request);
         $user = $request->user() ?? auth('api')->user();
 
         if ($request->input('type') === 'quit')
@@ -84,30 +84,12 @@ class MatchUpController
         }
 
         // check that the player is registered in the ladder
-        $player = $this->playerService->findPlayerByUsername($playerName, $ladder);
+        $player = $this->resolvePlayer($ladder, $playerName, $user, $isCasual);
         if (!isset($player))
         {
-            if ($isCasual)
-            {
-                if (!$user)
-                {
-                    $user = User::firstOrCreate(
-                        ['name' => $playerName],
-                        ['email' => strtolower($playerName) . '@casual.cncnet.org', 'password' => bcrypt(Str::random(16))]
-                    );
-                }
-
-                $player = Player::firstOrCreate(
-                    ['username' => $playerName, 'ladder_id' => $ladder->id],
-                    ['user_id' => $user->id]
-                );
-            }
-            else
-            {
-                return $this->quickMatchService->onFatalError(
-                    $playerName . ' is not registered in ' . $ladder->abbreviation
-                );
-            }
+            return $this->quickMatchService->onFatalError(
+                $playerName . ' is not registered in ' . $ladder->abbreviation
+            );
         }
 
         if (!$user)
@@ -459,7 +441,7 @@ class MatchUpController
         // If no match has been found already, then queue up to match an opponent
         if (!isset($qmPlayer->qm_match_id))
         {
-            $isCasual = $request->boolean('casual') || $request->input('mode') === 'casual';
+            $isCasual = $this->quickMatchService->isCasual($request);
             $qmQueueEntry = $this->quickMatchService->createOrUpdateQueueEntry($player, $qmPlayer, $ladder->currentHistory(), $gameType, $isCasual);
 
             // Push a job to find an opponent
@@ -632,5 +614,35 @@ class MatchUpController
         });
 
         return response()->json($counts);
+    }
+
+    /**
+     * Resolve existing player or auto-provision user/player for casual mode.
+     */
+    private function resolvePlayer(Ladder $ladder, string $playerName, ?User &$user, bool $isCasual): ?Player
+    {
+        $player = $this->playerService->findPlayerByUsername($playerName, $ladder);
+        if ($player)
+        {
+            return $player;
+        }
+
+        if ($isCasual)
+        {
+            if (!$user)
+            {
+                $user = User::firstOrCreate(
+                    ['name' => $playerName],
+                    ['email' => strtolower($playerName) . '@casual.cncnet.org', 'password' => bcrypt(Str::random(16))]
+                );
+            }
+
+            return Player::firstOrCreate(
+                ['username' => $playerName, 'ladder_id' => $ladder->id],
+                ['user_id' => $user->id]
+            );
+        }
+
+        return null;
     }
 }

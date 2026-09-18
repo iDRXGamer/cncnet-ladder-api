@@ -16,7 +16,7 @@ use App\Models\QmMap;
 use App\Models\QmMatch;
 use App\Models\QmMatchPlayer;
 use App\Models\QmQueueEntry;
-use Exception;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -29,6 +29,14 @@ class QuickMatchService
     public function __construct()
     {
         $this->twitchService = new TwitchService();
+    }
+
+    /**
+     * Determine whether a request is for casual matchmaking.
+     */
+    public function isCasual(Request $request): bool
+    {
+        return $request->boolean('casual') || $request->input('mode') === 'casual';
     }
 
     public function createQMPlayer($request, $player, $history)
