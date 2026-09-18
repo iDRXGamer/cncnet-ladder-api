@@ -85,21 +85,7 @@ class CasualPlayerMatchRequestTest extends TestCase
 
         Carbon::setTestNow($d->clone()->addSeconds(8));
 
-        // Player 2 enters casual queue
-        $this
-            ->jwtAuth($user2)
-            ->post('/api/v1/qm/' . $ladderName . '/' . $player2->username, [
-                'version' => '1.83',
-                'type' => 'match me up',
-                'map_bitfield' => 0xffffffff,
-                'side' => 1,
-                'map_sides' => [1, 1, 1, 1],
-                'casual' => true,
-            ]);
-
-        Carbon::setTestNow($d->clone()->addSeconds(8));
-
-        // Checkback / polling from Player 2
+        // Player 2 enters casual queue and matches
         $response = $this
             ->jwtAuth($user2)
             ->post('/api/v1/qm/' . $ladderName . '/' . $player2->username, [
@@ -201,5 +187,66 @@ class CasualPlayerMatchRequestTest extends TestCase
         $this->assertEquals(200, $status);
         $pgr->refresh();
         $this->assertEquals(0, $pgr->points);
+    }
+
+    public function test_casual_team_game_result_awards_zero_elo(): void
+    {
+        $lh = $this->makeLadderHistory($this->ladder);
+        $this->makePlayerHistory($this->player1, $lh);
+
+        $game = new Game();
+        $game->ladder_history_id = $lh->id;
+        $game->game_type = Game::GAME_TYPE_2VS2;
+        $game->is_casual = true;
+        $game->hash = 'test_team_hash';
+        $game->save();
+
+        $gameReport = new GameReport();
+        $gameReport->game_id = $game->id;
+        $gameReport->valid = true;
+        $gameReport->duration = 300;
+        $gameReport->fps = 60;
+        $gameReport->save();
+
+        $pgr1 = new PlayerGameReport();
+        $pgr1->game_report_id = $gameReport->id;
+        $pgr1->game_id = $game->id;
+        $pgr1->player_id = $this->player1->id;
+        $pgr1->team = 'A';
+        $pgr1->won = 1;
+        $pgr1->points = 100;
+        $pgr1->save();
+
+        $controller = app(ApiLadderController::class);
+        $status = $controller->awardTeamPoints($gameReport, $lh);
+
+        $this->assertEquals(200, $status);
+        $pgr1->refresh();
+        $this->assertEquals(0, $pgr1->points);
+    }
+
+    public function test_casual_clan_game_result_awards_zero_elo(): void
+    {
+        $lh = $this->makeLadderHistory($this->ladder);
+        $this->makePlayerHistory($this->player1, $lh);
+
+        $game = new Game();
+        $game->ladder_history_id = $lh->id;
+        $game->game_type = Game::GAME_TYPE_2VS2;
+        $game->is_casual = true;
+        $game->hash = 'test_clan_hash';
+        $game->save();
+
+        $gameReport = new GameReport();
+        $gameReport->game_id = $game->id;
+        $gameReport->valid = true;
+        $gameReport->duration = 300;
+        $gameReport->fps = 60;
+        $gameReport->save();
+
+        $controller = app(ApiLadderController::class);
+        $status = $controller->awardClanPoints($gameReport, $lh);
+
+        $this->assertEquals(200, $status);
     }
 }

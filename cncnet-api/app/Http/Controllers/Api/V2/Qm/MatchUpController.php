@@ -580,11 +580,38 @@ class MatchUpController
     /**
      * Get active queue counts per ladder abbreviation.
      */
-    public function getQueueCounts(): JsonResponse
+    public function getQueueCounts(Request $request): JsonResponse
     {
-        $counts = \Illuminate\Support\Facades\Cache::remember('qm_active_queue_counts', 1, function() {
+        $detailed = $request->boolean('detailed');
+        $cacheKey = $detailed ? 'qm_active_queue_counts_detailed' : 'qm_active_queue_counts';
+
+        $counts = \Illuminate\Support\Facades\Cache::remember($cacheKey, 1, function() use ($detailed) {
             // Active in last 6 seconds, not yet in match, actively waiting
             $cutoff = \Carbon\Carbon::now()->subSeconds(6);
+
+            $allLadders = Ladder::pluck('abbreviation')->toArray();
+
+            if ($detailed) {
+                $dbEntries = \App\Models\QmQueueEntry::where('qm_queue_entries.updated_at', '>=', $cutoff)
+                    ->join('qm_match_players', 'qm_queue_entries.qm_match_player_id', '=', 'qm_match_players.id')
+                    ->whereNull('qm_match_players.qm_match_id')
+                    ->where('qm_match_players.waiting', true)
+                    ->join('ladder_history', 'qm_queue_entries.ladder_history_id', '=', 'ladder_history.id')
+                    ->join('ladders', 'ladder_history.ladder_id', '=', 'ladders.id')
+                    ->selectRaw('ladders.abbreviation as ladder, qm_queue_entries.casual as casual, count(*) as count')
+                    ->groupBy('ladders.abbreviation', 'qm_queue_entries.casual')
+                    ->get();
+
+                $res = [];
+                foreach ($allLadders as $abbr) {
+                    $res[$abbr] = ['casual' => 0, 'ranked' => 0];
+                }
+                foreach ($dbEntries as $entry) {
+                    $type = $entry->casual ? 'casual' : 'ranked';
+                    $res[$entry->ladder][$type] = (int)$entry->count;
+                }
+                return $res;
+            }
 
             $dbCounts = \App\Models\QmQueueEntry::where('qm_queue_entries.updated_at', '>=', $cutoff)
                 ->join('qm_match_players', 'qm_queue_entries.qm_match_player_id', '=', 'qm_match_players.id')
@@ -597,7 +624,6 @@ class MatchUpController
                 ->pluck('count', 'ladder')
                 ->toArray();
 
-            $allLadders = ['sim-ra2', 'sim-ra2-2v2', 'sim-ra2-3v3', 'sim-ra2-2v2v2v2', 'sim-ra2-4v4'];
             $res = [];
             foreach ($allLadders as $abbr) {
                 $res[$abbr] = (int)($dbCounts[$abbr] ?? 0);

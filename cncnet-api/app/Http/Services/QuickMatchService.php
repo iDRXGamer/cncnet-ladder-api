@@ -88,10 +88,6 @@ class QuickMatchService
         {
             $qmPlayer->client_version = substr((string)$request->client_version, 0, 32);
         }
-        else if ($request->version)
-        {
-            $qmPlayer->client_version = substr((string)$request->version, 0, 32);
-        }
 
         if ($request->version && $request->platform)
         {
@@ -391,10 +387,12 @@ class QuickMatchService
 
             // Client versions need to match. Otherwise players simply don't see each other.
             $currentVersion = $qmQueueEntry->qmPlayer->client_version;
-            $query->where('qm_match_player_id', '!=', $qmQueueEntry->qmPlayer->id)
-                ->whereHas('qmPlayer', function ($sub) use ($currentVersion) {
+            $query->where('qm_match_player_id', '!=', $qmQueueEntry->qmPlayer->id);
+            if (!empty($currentVersion)) {
+                $query->whereHas('qmPlayer', function ($sub) use ($currentVersion) {
                     $sub->where('client_version', $currentVersion);
                 });
+            }
         }
 
         return $query->get();
@@ -1352,10 +1350,13 @@ class QuickMatchService
 
         Log::debug("Launching match with players $playerNames, " . $qmPlayer->player->username . " on map: " . $qmMatch->map->description);
 
-        // Apply balanced random factions for 1v1 Red Alert 2 matches
-        $active1v1Players = $qmMatch->players()->where('is_observer', 0)->get();
-        if ($active1v1Players->count() === 2) {
-            \App\Helpers\MatchmakingFactionHelper::assign1v1($active1v1Players[0], $active1v1Players[1]);
+        // Apply balanced random factions for 1v1 Red Alert 2 / Yuri's Revenge matches
+        $isRa2OrYr = in_array(strtolower($history->ladder->game ?? ''), ['ra2', 'yr']);
+        if ($isRa2OrYr) {
+            $active1v1Players = $qmMatch->players()->where('is_observer', 0)->get();
+            if ($active1v1Players->count() === 2) {
+                \App\Helpers\MatchmakingFactionHelper::assign1v1($active1v1Players[0], $active1v1Players[1]);
+            }
         }
 
         // Validate match configuration before launching
@@ -1449,23 +1450,26 @@ class QuickMatchService
         // Set observer spawn locations and flags
         $this->setObserversSpawns($observers, $qmMatch, $colors);
 
-        // Apply synchronized balanced random factions for team matches
-        $activeTeamPlayers = $qmMatch->players()->where('is_observer', 0)->get();
-        $teamA = $activeTeamPlayers->where('team', 'A')->values()->all();
-        $teamB = $activeTeamPlayers->where('team', 'B')->values()->all();
+        // Apply synchronized balanced random factions for team matches (RA2/YR only)
+        $isRa2OrYr = in_array(strtolower($ladder->game ?? ''), ['ra2', 'yr']);
+        if ($isRa2OrYr) {
+            $activeTeamPlayers = $qmMatch->players()->where('is_observer', 0)->get();
+            $teamA = $activeTeamPlayers->where('team', 'A')->values()->all();
+            $teamB = $activeTeamPlayers->where('team', 'B')->values()->all();
 
-        if (count($teamA) === 2 && count($teamB) === 2) {
-            \App\Helpers\MatchmakingFactionHelper::assign2v2($teamA, $teamB);
-        } elseif (count($teamA) === 3 && count($teamB) === 3) {
-            \App\Helpers\MatchmakingFactionHelper::assign3v3($teamA, $teamB);
-        } elseif (count($teamA) === 4 && count($teamB) === 4) {
-            \App\Helpers\MatchmakingFactionHelper::assign4v4($teamA, $teamB);
-        } else {
-            $teamsGrouped = [];
-            foreach ($activeTeamPlayers->groupBy('team') as $tName => $tPlayers) {
-                $teamsGrouped[$tName] = $tPlayers->values()->all();
+            if (count($teamA) === 2 && count($teamB) === 2) {
+                \App\Helpers\MatchmakingFactionHelper::assign2v2($teamA, $teamB);
+            } elseif (count($teamA) === 3 && count($teamB) === 3) {
+                \App\Helpers\MatchmakingFactionHelper::assign3v3($teamA, $teamB);
+            } elseif (count($teamA) === 4 && count($teamB) === 4) {
+                \App\Helpers\MatchmakingFactionHelper::assign4v4($teamA, $teamB);
+            } else {
+                $teamsGrouped = [];
+                foreach ($activeTeamPlayers->groupBy('team') as $tName => $tPlayers) {
+                    $teamsGrouped[$tName] = $tPlayers->values()->all();
+                }
+                \App\Helpers\MatchmakingFactionHelper::assignMultiTeam($teamsGrouped);
             }
-            \App\Helpers\MatchmakingFactionHelper::assignMultiTeam($teamsGrouped);
         }
 
         // Validate match configuration before launching

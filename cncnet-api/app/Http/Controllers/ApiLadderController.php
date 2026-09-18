@@ -408,6 +408,15 @@ class ApiLadderController extends Controller
 
     public function awardClanPoints($gameReport, $history)
     {
+        if ($gameReport->game?->is_casual || $gameReport->game?->qmMatch?->is_casual)
+        {
+            Log::info("awardClanPoints: Casual match, skipping Elo point calculations", [
+                'game_id' => $gameReport->game_id,
+                'game_report_id' => $gameReport->id,
+            ]);
+
+            return 200;
+        }
 
         $winningClanReport = $gameReport->playerGameReports()->where('won', 1)->where('spectator', 0)->groupBy("clan_id")->first();
 
@@ -646,6 +655,22 @@ class ApiLadderController extends Controller
 
         $winningTeam = $this->getWinningTeamFromReports($playerGameReports);
         $hasWinner = $winningTeam !== null;
+
+        if ($gameReport->game?->is_casual || $gameReport->game?->qmMatch?->is_casual)
+        {
+            Log::info("awardTeamPoints: Casual match, skipping Elo point calculations", [
+                'game_id' => $gameReport->game_id,
+                'game_report_id' => $gameReport->id,
+            ]);
+
+            foreach ($playerGameReports as $playerGR)
+            {
+                $playerGR->points = 0;
+                $playerGR->save();
+            }
+
+            return 200;
+        }
 
         foreach ($playerGameReports as $playerGR)
         {
