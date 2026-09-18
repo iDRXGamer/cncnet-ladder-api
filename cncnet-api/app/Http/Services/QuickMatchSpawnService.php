@@ -128,6 +128,65 @@ class QuickMatchSpawnService
             }
         }
 
+        // Inject mode settings from Matchmaking.ini (Server Authority - identical to official CnCNet ranked ladder)
+        $iniPath = base_path('Matchmaking.ini');
+        if (!file_exists($iniPath))
+        {
+            $iniPath = base_path('../Matchmaking.ini');
+        }
+
+        if (file_exists($iniPath))
+        {
+            $parsedIni = parse_ini_file($iniPath, true, INI_SCANNER_RAW);
+            if (!empty($parsedIni))
+            {
+                $modeKey = match ($ladder->abbreviation) {
+                    'sim-ra2' => '1v1',
+                    'sim-ra2-2v2' => '2v2',
+                    'sim-ra2-3v3' => '3v3',
+                    'sim-ra2-2v2v2v2' => '2v2v2v2',
+                    'sim-ra2-4v4' => '4v4',
+                    default => null
+                };
+
+                if (!$modeKey)
+                {
+                    $playerCount = $ladderRules->player_count ?? 2;
+                    $modeKey = match ($playerCount) {
+                        2 => '1v1',
+                        4 => '2v2',
+                        6 => '3v3',
+                        8 => '4v4',
+                        default => '1v1'
+                    };
+                }
+
+                $cbSection = "{$modeKey}_ForceCheckboxes";
+                if (!empty($parsedIni[$cbSection]) && is_array($parsedIni[$cbSection]))
+                {
+                    foreach ($parsedIni[$cbSection] as $key => $val)
+                    {
+                        $settingName = str_starts_with(strtolower($key), 'chk') ? substr($key, 3) : $key;
+                        $spawnStruct["spawn"]["Settings"][$settingName] = filter_var($val, FILTER_VALIDATE_BOOLEAN) ? "True" : "False";
+                    }
+                }
+
+                $ddSection = "{$modeKey}_ForceDropdowns";
+                if (!empty($parsedIni[$ddSection]) && is_array($parsedIni[$ddSection]))
+                {
+                    foreach ($parsedIni[$ddSection] as $key => $val)
+                    {
+                        $settingName = str_starts_with(strtolower($key), 'cmb') ? substr($key, 3) : $key;
+                        $spawnStruct["spawn"]["Settings"][$settingName] = (string)$val;
+                        if (strtolower($settingName) === 'gamespeedcapmultiplayer')
+                        {
+                            $spawnStruct["spawn"]["Settings"]["GameSpeed"] = (string)$val;
+                        }
+                    }
+                }
+            }
+        }
+
         return $spawnStruct;
     }
 

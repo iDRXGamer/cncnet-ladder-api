@@ -86,7 +86,11 @@ class QuickMatchService
 
         if ($request->client_version)
         {
-            $qmPlayer->client_version = $request->client_version;
+            $qmPlayer->client_version = substr((string)$request->client_version, 0, 32);
+        }
+        else if ($request->version)
+        {
+            $qmPlayer->client_version = substr((string)$request->version, 0, 32);
         }
 
         if ($request->version && $request->platform)
