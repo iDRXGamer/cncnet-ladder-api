@@ -466,6 +466,7 @@ class LadderController extends Controller
         $ladder->clans_allowed = $request->clans_allowed;
         $ladder->game_object_schema_id = $request->game_object_schema_id;
         $ladder->private = $request->private;
+        $ladder->is_casual = (bool)$request->is_casual;
         if ($request->ladder_type)
         {
             $ladder->ladder_type = $request->ladder_type;
