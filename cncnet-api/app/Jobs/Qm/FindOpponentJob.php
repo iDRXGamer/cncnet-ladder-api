@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Qm;
 
+use App\Extensions\Qm\Matchup\CasualMatchupHandler;
 use App\Extensions\Qm\Matchup\ClanMatchupHandler;
 use App\Extensions\Qm\Matchup\PlayerMatchupHandler;
 use App\Extensions\Qm\Matchup\TeamMatchupHandler;
@@ -59,7 +60,10 @@ class FindOpponentJob implements ShouldQueue/*, ShouldBeUnique*/
         $this->qmQueueEntry->qmPlayer->map_bitfield = 0xffffffff;
         $this->qmQueueEntry->qmPlayer->save();
 
-        if($this->qmQueueEntry->ladderHistory->ladder->clans_allowed) {
+        if($this->qmQueueEntry->ladderHistory->ladder->is_casual) {
+            $matchupHandler = new CasualMatchupHandler($this->qmQueueEntry, $this->gameType);
+        }
+        elseif($this->qmQueueEntry->ladderHistory->ladder->clans_allowed) {
             $matchupHandler = new ClanMatchupHandler($this->qmQueueEntry, $this->gameType);
         }
         elseif ($this->qmQueueEntry->ladderHistory->ladder->qmLadderRules->player_count > 2) {
