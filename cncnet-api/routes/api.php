@@ -152,4 +152,13 @@ Route::group(['prefix' => 'v1'], function ()
                 \App\Http\Middleware\Api\VerifiedEmailMiddleware::class,
             ]);
     });
+
+    // Casual matchmaking does not require an account, so these routes are rate limited per client.
+    Route::group(['prefix' => 'qm/casual', 'middleware' => 'throttle:60,1'], function ()
+    {
+        Route::get('/queue-counts', [\App\Http\Controllers\Api\V2\Qm\CasualMatchUpController::class, 'queueCounts']);
+
+        Route::post('/{ladder:abbreviation}/{playerName}', \App\Http\Controllers\Api\V2\Qm\CasualMatchUpController::class)
+            ->middleware(\App\Http\Middleware\Api\ClientUpToDateMiddleware::class);
+    });
 });
